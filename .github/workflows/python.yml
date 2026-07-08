@@ -42,12 +42,6 @@ jobs:
         with:
           name: coverage-report-${{ matrix.python-version }}
           path: htmlcov/
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
-        if: ${{ matrix.python-version == '3.13' && env.SONAR_TOKEN != '' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   publish:
     if: github.event_name == 'release'

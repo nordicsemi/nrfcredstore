@@ -54,6 +54,7 @@ usb_patterns = [
     (r"0010551", "Thingy:91 X", 0),
     (r"0010513", "Thingy:91 X", 0),
     (r"0010577", "nRF54L15-DK", 1),
+    (r"0010518", "nRF54LM20-DK", 1),
     (r"00105", "Unknown Nordic Kit", 0),
     (r"NRFBLEGW", "nRF Cloud Gateway", 0),
 ]

@@ -327,3 +327,11 @@ def test_nrf_cloud_cred_get_pubkey(nrf_cloud_cred_interface):
         True, 'PUBKEY: ' + base64.b64encode(pubkey).decode())
     assert nrf_cloud_cred_interface.get_pubkey(42) == pubkey
     assert written_lines(nrf_cloud_cred_interface) == ['nrf_cloud_cred pubkey 42']
+
+def test_write_credential_tls_buffer_full(tls_cred_shell_interface):
+    """Test that a full credential buffer on the device fails instead of storing a truncated credential"""
+    tls_cred_shell_interface.comms.write_line = Mock()
+    tls_cred_shell_interface.comms.expect_response.return_value = (False, '')
+    assert tls_cred_shell_interface.write_credential(42, CredType.CLIENT_CERT.value, 'x' * 200) is False
+    # Stops at the first chunk that failed: clear the buffer and send one chunk.
+    assert tls_cred_shell_interface.comms.write_line.call_count == 2

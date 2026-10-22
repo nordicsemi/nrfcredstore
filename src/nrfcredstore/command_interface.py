@@ -257,7 +257,14 @@ class TLSCredShellInterface(CredentialCommandInterface):
         for c in range(chunks):
             chunk = encoded[c*TLS_CRED_CHUNK_SIZE:(c+1)*TLS_CRED_CHUNK_SIZE]
             self.write_raw(f"cred buf {chunk}")
-            self.comms.expect_response(ok_pattern="Stored")
+            result, _ = self.comms.expect_response(ok_pattern="Stored",
+                                                   error_pattern="Not enough room")
+            if not result:
+                # The shell clears the buffer when it is full, so carrying on would
+                # install a truncated credential.
+                logger.error("Failed to buffer the credential on the device. The buffer may be "
+                             "too small, increase CONFIG_TLS_CREDENTIALS_SHELL_CRED_BUF_SIZE.")
+                return False
 
         # Store the buffered credential
         self.write_raw(f"cred add {sectag} {TLS_CRED_TYPES[cred_type]} DEFAULT bint")

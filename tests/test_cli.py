@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import Mock, ANY, patch
 from serial import SerialException
 from nrfcredstore.cli import main, parse_args, run, FUN_MODE_OFFLINE
+from nrfcredstore.command_interface import TLSCredKeygenShellInterface, ATCommandInterface
 
 from nrfcredstore.credstore import CredType
 from nrfcredstore.exceptions import NoATClientException, ATCommandError
@@ -145,3 +146,45 @@ class TestCli():
             with pytest.raises(Exception) as e:
                 run(['nrfcredstore', 'fakedev', 'list'])
         assert e.type == Exception
+
+    @patch('builtins.open')
+    def test_tls_shell_generate(self, mock_file, credstore, command_interface):
+        credstore.keygen.return_value = True
+        main(parse_args(['fakedev', '--cmd-type', 'tls-shell', 'generate', '123', 'foo.der',
+                         '--attributes', 'CN=foo']), credstore)
+        credstore.keygen.assert_called_with(123, ANY, 'CN=foo')
+        # The modem specific steps are skipped for a device without a modem.
+        credstore.func_mode.assert_not_called()
+        command_interface.detect_shell_mode.assert_not_called()
+        command_interface.set_shell_mode.assert_not_called()
+        command_interface.enable_error_codes.assert_not_called()
+
+    @patch('builtins.open')
+    def test_tls_shell_write(self, mock_file, credstore):
+        main(parse_args(['fakedev', '--cmd-type', 'tls-shell', 'write', '123', 'CLIENT_CERT',
+                         'cert.pem']), credstore)
+        credstore.write.assert_called_with(123, CredType.CLIENT_CERT, ANY)
+        credstore.func_mode.assert_not_called()
+
+    def test_tls_shell_delete(self, credstore):
+        main(parse_args(['fakedev', '--cmd-type', 'tls-shell', 'delete', '123', 'CLIENT_KEY']),
+             credstore)
+        credstore.delete.assert_called_with(123, CredType.CLIENT_KEY)
+        credstore.func_mode.assert_not_called()
+
+    @pytest.mark.parametrize('subcommand', [['list'], ['deleteall'], ['imei'], ['attoken']])
+    def test_tls_shell_unsupported_subcommand(self, credstore, subcommand):
+        with pytest.raises(RuntimeError, match='not supported'):
+            main(parse_args(['fakedev', '--cmd-type', 'tls-shell'] + subcommand), credstore)
+        credstore.func_mode.assert_not_called()
+
+    @pytest.mark.parametrize('cmd_type,expected', [
+        ('tls-shell', TLSCredKeygenShellInterface),
+        ('at', ATCommandInterface),
+        ('auto', ATCommandInterface),
+    ])
+    def test_run_selects_command_interface(self, cmd_type, expected):
+        with patch('nrfcredstore.cli.Comms'), patch('nrfcredstore.cli.main') as mock_main:
+            run(['nrfcredstore', 'fakedev', '--cmd-type', cmd_type, 'imei'])
+        credstore = mock_main.call_args.args[1]
+        assert type(credstore.command_interface) is expected

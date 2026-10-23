@@ -17,10 +17,12 @@ Run the following command to use this package as a dependency:
 
 The device must be able to respond to AT commands. The [Cellular: AT Client sample](https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/samples/cellular/at_client/README.html) can be used, and the [nRF9151 DK application and modem firmware](https://www.nordicsemi.com/Products/Development-hardware/nRF9151-DK/Download?lang=en#infotabs) download contains a pre-built firmware.
 
+For a device without a modem, such as nRF71 Series SoCs and the nRF53 or nRF54 Series SoCs hosting the nRF70 Series Wi-Fi companion ICs, use the `--cmd-type tls-shell` option. The device must be built with the Zephyr TLS credentials shell (`CONFIG_TLS_CREDENTIALS_SHELL`) and, to generate a key, with `CONFIG_TLS_CREDENTIALS_KEYGEN`.
+
 ## Command Line Interface
 
 ```
-usage: nrfcredstore [-h] [--baudrate BAUDRATE] [--timeout TIMEOUT] [--debug] [--cmd-type {at,shell,auto}]
+usage: nrfcredstore [-h] [--baudrate BAUDRATE] [--timeout TIMEOUT] [--debug] [--cmd-type {at,shell,tls-shell,auto}]
                     dev {list,write,delete,deleteall,imei,attoken,generate} ...
 
 Manage certificates stored in a cellular modem.
@@ -34,8 +36,10 @@ options:
   --baudrate BAUDRATE   Serial baudrate
   --timeout TIMEOUT     Serial communication timeout in seconds
   --debug               Enable debug logging
-  --cmd-type {at,shell,auto}
-                        Command type to use. "at" for AT commands, "shell" for shell commands, "auto" to detect automatically.
+  --cmd-type {at,shell,tls-shell,auto}
+                        Command type to use. "at" for AT commands, "shell" for AT commands in a shell, "tls-shell" for the Zephyr TLS credentials
+                        shell commands of a device without a modem (supports write, delete and generate only), "auto" to detect automatically
+                        between "at" and "shell".
 
 subcommands:
   {list,write,delete,deleteall,imei,attoken,generate}
@@ -133,6 +137,20 @@ usage: nrfcredstore [--baudrate BAUDRATE] [--timeout TIMEOUT] dev generate SECUR
 
     # Convert DER to CSR
     $ openssl req -pubkey -in device_cert.der -inform DER > device_cert.csr
+
+#### Device without a modem
+
+With `--cmd-type tls-shell`, the private key and the CSR are generated on the device with the key generation commands of the TLS credentials shell (`cred keygen` and `cred csr`). The private key never leaves the device. The CSR subject is required and is set with the `--attributes` option. The shell has no default subject, so choose the common name (CN) that the cloud service expects, for example the device ID.
+
+    $ nrfcredstore /dev/ttyACM0 --cmd-type tls-shell generate 123 device_cert.der --attributes "CN=my-device"
+
+    # Convert the DER CSR to PEM
+    $ openssl req -inform DER -in device_cert.der -outform PEM -out device_cert.csr.pem
+
+After the CSR is signed, install the certificate and the CA certificate with the `write` subcommand.
+
+    $ nrfcredstore /dev/ttyACM0 --cmd-type tls-shell write 123 CLIENT_CERT device_cert.pem
+    $ nrfcredstore /dev/ttyACM0 --cmd-type tls-shell write 123 ROOT_CA_CERT ca.pem
 
 ## Development installation
 

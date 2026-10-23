@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock, patch
 from nrfcredstore.credstore import *
 from nrfcredstore.exceptions import ATCommandError
+from nrfcredstore.command_interface import TLSCredShellInterface
 
 # pylint: disable=no-self-use
 class TestCredStore:
@@ -162,3 +163,53 @@ dGVzdA==
         with patch.object(cred_store.command_interface, 'get_csr', return_value=None):
             with pytest.raises(RuntimeError):
                 cred_store.keygen(12345678, Mock())
+
+
+class TestCredStoreTLSShell:
+    """Test suite for CredStore with a TLS credentials shell command interface"""
+
+    @pytest.fixture
+    def command_interface(self):
+        return Mock(spec=TLSCredShellInterface)
+
+    @pytest.fixture
+    def cred_store(self, command_interface):
+        return CredStore(command_interface)
+
+    @pytest.mark.parametrize('type', [CredType.ROOT_CA_CERT, CredType.CLIENT_CERT, CredType.CLIENT_KEY])
+    def test_write(self, cred_store, command_interface, type):
+        command_interface.write_credential.return_value = True
+        cred_store.write(10, type, io.StringIO('pem text\n'))
+        command_interface.write_credential.assert_called_with(10, type.value, 'pem text\n')
+
+    def test_write_fail(self, cred_store, command_interface):
+        command_interface.write_credential.return_value = False
+        with pytest.raises(RuntimeError):
+            cred_store.write(10, CredType.CLIENT_CERT, io.StringIO('pem'))
+
+    def test_write_unsupported_type(self, cred_store, command_interface):
+        with pytest.raises(ValueError):
+            cred_store.write(10, CredType.PSK, io.StringIO('pem'))
+        command_interface.write_credential.assert_not_called()
+
+    def test_delete(self, cred_store, command_interface):
+        command_interface.delete_credential.return_value = True
+        cred_store.delete(10, CredType.CLIENT_KEY)
+        command_interface.delete_credential.assert_called_with(10, CredType.CLIENT_KEY.value)
+
+    def test_delete_fail(self, cred_store, command_interface):
+        command_interface.delete_credential.return_value = False
+        with pytest.raises(RuntimeError):
+            cred_store.delete(10, CredType.CLIENT_CERT)
+
+    def test_delete_unsupported_type(self, cred_store, command_interface):
+        with pytest.raises(ValueError):
+            cred_store.delete(10, CredType.PSK)
+
+    def test_generate_standard_base64_csr(self, cred_store, command_interface):
+        """The shell prints standard Base64 with padding, the modem prints unpadded Base64URL."""
+        der = bytes([0xfb, 0xff, 0xfe, 0x30])
+        command_interface.get_csr.return_value = base64.b64encode(der).decode()
+        out = Mock()
+        cred_store.keygen(10, out, 'CN=a')
+        out.write.assert_called_with(der)

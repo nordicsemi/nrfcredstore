@@ -2,7 +2,11 @@ from unittest.mock import patch, Mock
 from collections import namedtuple
 import pytest
 
-from nrfcredstore.command_interface import CredentialCommandInterface, ATCommandInterface, TLSCredShellInterface
+import base64
+
+from nrfcredstore.command_interface import (CredentialCommandInterface, ATCommandInterface,
+                                            TLSCredShellInterface, TLSCredKeygenShellInterface,
+                                            NrfCloudCredShellInterface)
 from nrfcredstore.credstore import CredType
 
 @pytest.fixture
@@ -196,3 +200,124 @@ def test_detect_shell_mode_shell(at_command_interface):
     at_command_interface.comms = MockCommsATShell()
     at_command_interface.detect_shell_mode()
     assert at_command_interface.shell == True
+
+
+@pytest.fixture
+def keygen_interface(comms):
+    """Mock TLSCredKeygenShellInterface"""
+    return TLSCredKeygenShellInterface(comms)
+
+@pytest.fixture
+def nrf_cloud_cred_interface(comms):
+    """Mock NrfCloudCredShellInterface"""
+    return NrfCloudCredShellInterface(comms)
+
+def written_lines(interface):
+    return [c.args[0] for c in interface.comms.write_line.call_args_list]
+
+def test_keygen_get_csr(keygen_interface):
+    """Test the key is generated, then the CSR is read from the TLS credentials shell"""
+    keygen_interface.comms.expect_response.side_effect = [
+        (True, ''),
+        (True, 'CSR: MIIB==\r\n'),
+    ]
+    csr = keygen_interface.get_csr(sectag=42, attributes='CN=my-device,O=Nordic')
+    assert csr == 'MIIB=='
+    assert written_lines(keygen_interface) == [
+        'cred keygen 42',
+        'cred csr 42 "CN=my-device,O=Nordic"',
+    ]
+
+def test_keygen_get_csr_existing_key(keygen_interface):
+    """Test an existing key is not an error, the CSR is still read"""
+    keygen_interface.comms.expect_response.side_effect = [
+        (False, ''),
+        (True, 'CSR: MIIB==\r\n'),
+    ]
+    assert keygen_interface.get_csr(sectag=42, attributes='CN=a') == 'MIIB=='
+
+def test_keygen_get_csr_requires_subject(keygen_interface):
+    """Test no command is sent when the subject is missing"""
+    assert keygen_interface.get_csr(sectag=42) is None
+    keygen_interface.comms.write_line.assert_not_called()
+
+def test_keygen_get_csr_failure(keygen_interface):
+    """Test a failed CSR generation returns None"""
+    keygen_interface.comms.expect_response.side_effect = [(True, ''), (False, '')]
+    assert keygen_interface.get_csr(sectag=42, attributes='CN=a') is None
+
+def test_keygen_get_csr_missing_output(keygen_interface):
+    """Test a missing CSR line returns None"""
+    keygen_interface.comms.expect_response.side_effect = [(True, ''), (True, '')]
+    assert keygen_interface.get_csr(sectag=42, attributes='CN=a') is None
+
+def test_keygen_delete_private_key(keygen_interface):
+    """Test the private key is deleted with the key command"""
+    keygen_interface.comms.expect_response.return_value = (True, '')
+    assert keygen_interface.delete_credential(42, CredType.CLIENT_KEY.value) is True
+    assert written_lines(keygen_interface) == ['cred keydel 42']
+
+def test_keygen_delete_certificate(keygen_interface):
+    """Test certificates are deleted with the regular credential command"""
+    keygen_interface.comms.expect_response.return_value = (True, '')
+    keygen_interface.delete_credential(42, CredType.ROOT_CA_CERT.value)
+    assert written_lines(keygen_interface) == ['cred del 42 CA']
+
+def test_keygen_get_pubkey(keygen_interface):
+    """Test the public key is decoded from the shell output"""
+    pubkey = b'\x04' + bytes(range(64))
+    keygen_interface.comms.expect_response.return_value = (
+        True, 'PUBKEY: ' + base64.b64encode(pubkey).decode() + '\r\n')
+    assert keygen_interface.get_pubkey(42) == pubkey
+    assert written_lines(keygen_interface) == ['cred pubkey 42']
+
+def test_keygen_get_pubkey_failure(keygen_interface):
+    """Test a failed public key export returns None"""
+    keygen_interface.comms.expect_response.return_value = (False, '')
+    assert keygen_interface.get_pubkey(42) is None
+
+def test_nrf_cloud_cred_get_csr_with_attributes(nrf_cloud_cred_interface):
+    """Test the nrf_cloud_cred commands are used with a subject"""
+    nrf_cloud_cred_interface.comms.expect_response.side_effect = [
+        (True, ''),
+        (True, 'CSR: MIIB==\r\n'),
+    ]
+    assert nrf_cloud_cred_interface.get_csr(sectag=42, attributes='CN=dev') == 'MIIB=='
+    assert written_lines(nrf_cloud_cred_interface) == [
+        'nrf_cloud_cred keygen 42',
+        'nrf_cloud_cred csr 42 "CN=dev"',
+    ]
+
+def test_nrf_cloud_cred_get_csr_default_subject(nrf_cloud_cred_interface):
+    """Test the nrf_cloud_cred shell chooses the subject when none is given"""
+    nrf_cloud_cred_interface.comms.expect_response.side_effect = [
+        (True, ''),
+        (True, 'CSR: MIIB==\r\n'),
+    ]
+    assert nrf_cloud_cred_interface.get_csr(sectag=42) == 'MIIB=='
+    assert written_lines(nrf_cloud_cred_interface) == [
+        'nrf_cloud_cred keygen 42',
+        'nrf_cloud_cred csr 42',
+    ]
+
+def test_nrf_cloud_cred_delete_private_key(nrf_cloud_cred_interface):
+    """Test the private key is deleted with the nrf_cloud_cred command"""
+    nrf_cloud_cred_interface.comms.expect_response.return_value = (True, '')
+    nrf_cloud_cred_interface.delete_credential(42, CredType.CLIENT_KEY.value)
+    assert written_lines(nrf_cloud_cred_interface) == ['nrf_cloud_cred delete 42']
+
+def test_nrf_cloud_cred_get_pubkey(nrf_cloud_cred_interface):
+    """Test the nrf_cloud_cred public key command"""
+    pubkey = b'\x04' + bytes(64)
+    nrf_cloud_cred_interface.comms.expect_response.return_value = (
+        True, 'PUBKEY: ' + base64.b64encode(pubkey).decode())
+    assert nrf_cloud_cred_interface.get_pubkey(42) == pubkey
+    assert written_lines(nrf_cloud_cred_interface) == ['nrf_cloud_cred pubkey 42']
+
+def test_write_credential_tls_buffer_full(tls_cred_shell_interface):
+    """Test that a full credential buffer on the device fails instead of storing a truncated credential"""
+    tls_cred_shell_interface.comms.write_line = Mock()
+    tls_cred_shell_interface.comms.expect_response.return_value = (False, '')
+    assert tls_cred_shell_interface.write_credential(42, CredType.CLIENT_CERT.value, 'x' * 200) is False
+    # Stops at the first chunk that failed: clear the buffer and send one chunk.
+    assert tls_cred_shell_interface.comms.write_line.call_count == 2

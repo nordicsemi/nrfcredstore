@@ -257,7 +257,14 @@ class TLSCredShellInterface(CredentialCommandInterface):
         for c in range(chunks):
             chunk = encoded[c*TLS_CRED_CHUNK_SIZE:(c+1)*TLS_CRED_CHUNK_SIZE]
             self.write_raw(f"cred buf {chunk}")
-            self.comms.expect_response(ok_pattern="Stored")
+            result, _ = self.comms.expect_response(ok_pattern="Stored",
+                                                   error_pattern="Not enough room")
+            if not result:
+                # The shell clears the buffer when it is full, so carrying on would
+                # install a truncated credential.
+                logger.error("Failed to buffer the credential on the device. The buffer may be "
+                             "too small, increase CONFIG_TLS_CREDENTIALS_SHELL_CRED_BUF_SIZE.")
+                return False
 
         # Store the buffered credential
         self.write_raw(f"cred add {sectag} {TLS_CRED_TYPES[cred_type]} DEFAULT bint")
@@ -314,20 +321,32 @@ class TLSCredShellInterface(CredentialCommandInterface):
     def get_mfw_version(self):
         raise RuntimeError("The TLS Credentials Shell does not support MFW version extraction")
 
-# Index into TLS_CRED_TYPES for the private key. For this interface the private
-# key is a PSA key managed through the nrf_cloud_cred commands, not a regular
-# TLS credential.
-NRF_CLOUD_CRED_PK_TYPE = 2
+# Index into TLS_CRED_TYPES for the private key. For the key generation interfaces the private
+# key is a PSA key managed through the key generation commands, not a regular TLS credential.
+KEYGEN_PK_TYPE = 2
+NRF_CLOUD_CRED_PK_TYPE = KEYGEN_PK_TYPE
 
-class NrfCloudCredShellInterface(TLSCredShellInterface):
+class TLSCredKeygenShellInterface(TLSCredShellInterface):
     """TLS Credentials Shell variant that generates the device private key and
-    CSR on-device using the 'nrf_cloud_cred' shell commands.
+    CSR on-device using the key generation commands of the Zephyr TLS
+    credentials shell (CONFIG_TLS_CREDENTIALS_KEYGEN).
 
     The private key is created in PSA as a persistent, non-exportable key and
     never leaves the device. Only the CSR (Base64-encoded DER) is returned to
     the host. CA and device certificates are still written with the inherited
     TLS Credentials Shell commands.
+
+    The subject of the CSR is required, because the shell has no default for it.
+    Pass it as the attributes, for example "CN=my-device".
     """
+
+    # Shell commands. The subclass for another command set only has to change these.
+    KEYGEN_CMD = "cred keygen {sectag}"
+    CSR_CMD = 'cred csr {sectag} "{attributes}"'
+    # Used when no attributes are given. None means the attributes are required.
+    CSR_CMD_DEFAULT_SUBJECT = None
+    DELETE_CMD = "cred keydel {sectag}"
+    PUBKEY_CMD = "cred pubkey {sectag}"
 
     def generate_key(self, sectag: int) -> bool:
         """Generate the device private key on-device.
@@ -335,7 +354,7 @@ class NrfCloudCredShellInterface(TLSCredShellInterface):
         A pre-existing key is left in place (not an error): the key is present
         either way and can sign a CSR.
         """
-        self.write_raw(f"nrf_cloud_cred keygen {sectag}")
+        self.write_raw(self.KEYGEN_CMD.format(sectag=sectag))
         self.comms.expect_response(
             ok_pattern="Generated device key",
             error_pattern="already exists",
@@ -345,9 +364,9 @@ class NrfCloudCredShellInterface(TLSCredShellInterface):
 
     def delete_credential(self, sectag: int, cred_type: int):
         # The on-device private key is a PSA key, so it must be deleted through
-        # the nrf_cloud_cred command. Certificates are deleted normally.
-        if cred_type == NRF_CLOUD_CRED_PK_TYPE:
-            self.write_raw(f"nrf_cloud_cred delete {sectag}")
+        # the key command. Certificates are deleted normally.
+        if cred_type == KEYGEN_PK_TYPE:
+            self.write_raw(self.DELETE_CMD.format(sectag=sectag))
             result, _ = self.comms.expect_response(
                 ok_pattern="Deleted device key",
                 error_pattern="Key deletion failed",
@@ -356,13 +375,17 @@ class NrfCloudCredShellInterface(TLSCredShellInterface):
         return super().delete_credential(sectag, cred_type)
 
     def get_csr(self, sectag=0, attributes=""):
+        if attributes:
+            csr_cmd = self.CSR_CMD.format(sectag=sectag, attributes=attributes)
+        elif self.CSR_CMD_DEFAULT_SUBJECT is not None:
+            csr_cmd = self.CSR_CMD_DEFAULT_SUBJECT.format(sectag=sectag)
+        else:
+            logger.error('A CSR subject is required, for example --attributes "CN=my-device"')
+            return None
+
         # Ensure a device key exists, then request a CSR signed on-device.
         self.generate_key(sectag)
-
-        if attributes:
-            self.write_raw(f'nrf_cloud_cred csr {sectag} "{attributes}"')
-        else:
-            self.write_raw(f"nrf_cloud_cred csr {sectag}")
+        self.write_raw(csr_cmd)
 
         result, output = self.comms.expect_response(
             ok_pattern="CSR generation complete",
@@ -383,11 +406,14 @@ class NrfCloudCredShellInterface(TLSCredShellInterface):
         return None
 
     def get_pubkey(self, sectag: int) -> Optional[bytes]:
-        """Get the device public key (SEC1 uncompressed point) for verification.
+        """Get the device public key for verification.
+
+        The TLS Credentials Shell prints a DER SubjectPublicKeyInfo, and the
+        nrf_cloud_cred shell prints a raw SEC1 uncompressed point.
 
         Returns the raw public key bytes, or None on failure.
         """
-        self.write_raw(f"nrf_cloud_cred pubkey {sectag}")
+        self.write_raw(self.PUBKEY_CMD.format(sectag=sectag))
         result, output = self.comms.expect_response(
             ok_pattern="Public key export complete",
             error_pattern="Public key export failed",
@@ -406,7 +432,21 @@ class NrfCloudCredShellInterface(TLSCredShellInterface):
         return None
 
     def get_imei(self):
-        raise RuntimeError("nrf_cloud_cred shell does not support IMEI extraction")
+        raise RuntimeError("The key generation shell does not support IMEI extraction")
 
     def get_mfw_version(self):
-        raise RuntimeError("nrf_cloud_cred shell does not support MFW version extraction")
+        raise RuntimeError("The key generation shell does not support MFW version extraction")
+
+class NrfCloudCredShellInterface(TLSCredKeygenShellInterface):
+    """Key generation using the 'nrf_cloud_cred' shell commands of the nRF Cloud library.
+
+    The CSR subject is optional. The device uses its nRF Cloud device ID when it is omitted.
+
+    Deprecated: use TLSCredKeygenShellInterface with newer firmware.
+    """
+
+    KEYGEN_CMD = "nrf_cloud_cred keygen {sectag}"
+    CSR_CMD = 'nrf_cloud_cred csr {sectag} "{attributes}"'
+    CSR_CMD_DEFAULT_SUBJECT = "nrf_cloud_cred csr {sectag}"
+    DELETE_CMD = "nrf_cloud_cred delete {sectag}"
+    PUBKEY_CMD = "nrf_cloud_cred pubkey {sectag}"

@@ -3,6 +3,8 @@ import io
 from enum import Enum
 from typing import List
 
+from nrfcredstore.command_interface import TLSCredShellInterface
+
 FUN_MODE_OFFLINE = 4
 
 class CredType(Enum):
@@ -29,6 +31,15 @@ class Credential:
 class CredStore:
     def __init__(self, command_interface):
         self.command_interface = command_interface
+
+    def _is_tls_shell(self) -> bool:
+        return isinstance(self.command_interface, TLSCredShellInterface)
+
+    @staticmethod
+    def _check_tls_shell_type(type: CredType):
+        """The TLS credentials shell has a CA certificate, a device certificate and a private key."""
+        if type not in (CredType.ROOT_CA_CERT, CredType.CLIENT_CERT, CredType.CLIENT_KEY):
+            raise ValueError(f'{type.name} is not supported by the TLS credentials shell')
 
     def func_mode(self, mode):
         """Set modem functioning mode
@@ -84,6 +95,12 @@ class CredStore:
         if type == CredType.ANY:
             raise ValueError
         cert = file.read().rstrip()
+        if self._is_tls_shell():
+            self._check_tls_shell_type(type)
+            # mbedTLS requires a new line after the PEM footer, which rstrip() removed.
+            if not self.command_interface.write_credential(tag, type.value, cert + '\n'):
+                raise RuntimeError("Failed to write credential")
+            return
         if not self.command_interface.at_command(f'AT%CMNG=0,{tag},{type.value},"{cert}"', wait_for_result=True):
             raise RuntimeError("Failed to write credential")
 
@@ -95,6 +112,11 @@ class CredStore:
 
         if type == CredType.ANY:
             raise ValueError
+        if self._is_tls_shell():
+            self._check_tls_shell_type(type)
+            if not self.command_interface.delete_credential(tag, type.value):
+                raise RuntimeError("Failed to delete credential")
+            return
         if not self.command_interface.at_command(f'AT%CMNG=3,{tag},{type.value}', wait_for_result=True):
             raise RuntimeError("Failed to delete credential")
 
@@ -106,7 +128,7 @@ class CredStore:
         if not keygen_output:
             raise RuntimeError("Failed to generate key")
 
-        csr_der_b64 = keygen_output.split('.')[0]
+        csr_der_b64 = keygen_output.split('.')[0].rstrip('=')
         csr_der_bytes = base64.urlsafe_b64decode(csr_der_b64 + '===')
 
         file.write(csr_der_bytes)

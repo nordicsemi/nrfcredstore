@@ -443,6 +443,8 @@ class NrfCloudCredShellInterface(TLSCredKeygenShellInterface):
     """Key generation using the 'nrf_cloud_cred' shell commands of the nRF Cloud library.
 
     The CSR subject is optional. The device uses its nRF Cloud device ID when it is omitted.
+
+    Deprecated: use TLSCredKeygenShellInterface with newer firmware.
     """
 
     KEYGEN_CMD = "nrf_cloud_cred keygen {sectag}"

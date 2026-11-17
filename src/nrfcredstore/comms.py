@@ -418,7 +418,7 @@ class Comms:
         self.jlink_api.sys_reset()
         self.jlink_api.go()
         self.jlink_api.rtt_start()
-        for _ in range(5):
+        for _ in range(20):
             if self.jlink_api.rtt_is_control_block_found():
                 break
             time.sleep(0.5)

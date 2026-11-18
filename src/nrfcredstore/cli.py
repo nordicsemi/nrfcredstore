@@ -3,7 +3,7 @@ import sys
 import serial
 import logging
 
-from nrfcredstore.exceptions import ATCommandError, NoATClientException
+from nrfcredstore.exceptions import ATCommandError, NoATClientException, RTTUnavailableError
 from nrfcredstore.command_interface import ATCommandInterface
 from nrfcredstore.credstore import CredStore, CredType
 from nrfcredstore.comms import Comms
@@ -157,11 +157,14 @@ def run(argv=sys.argv):
     # Use inquirer to find the device
     if args.dev == 'auto':
         comms = Comms(list_all=True, baudrate=args.baudrate, timeout=args.timeout, xonxoff=args.xonxoff, rtscts=not args.rtscts_off, dsrdtr=args.dsrdtr)
-    elif args.dev == 'rtt':
-        comms = Comms(rtt=True, baudrate=args.baudrate, timeout=args.timeout)
-    # If dev is just numbers, assume it's an rtt device
-    elif args.dev.isdigit():
-        comms = Comms(rtt=True, serial=int(args.dev), timeout=args.timeout)
+    elif args.dev == 'rtt' or args.dev.isdigit():
+        try:
+            if args.dev == 'rtt':
+                comms = Comms(rtt=True, baudrate=args.baudrate, timeout=args.timeout)
+            else:
+                comms = Comms(rtt=True, serial=int(args.dev), timeout=args.timeout)
+        except RTTUnavailableError as exc:
+            sys.exit(str(exc))
     # Otherwise, assume it's a serial device
     else:
         comms = Comms(port=args.dev, baudrate=args.baudrate, timeout=args.timeout, xonxoff=args.xonxoff, rtscts=not args.rtscts_off, dsrdtr=args.dsrdtr)

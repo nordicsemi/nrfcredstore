@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from unittest.mock import Mock, ANY, patch
@@ -6,6 +8,14 @@ from nrfcredstore.cli import main, parse_args, run, FUN_MODE_OFFLINE
 
 from nrfcredstore.credstore import CredType
 from nrfcredstore.exceptions import NoATClientException, ATCommandError
+
+
+@pytest.mark.parametrize("device", ["rtt", "1051202135"])
+def test_rtt_without_extra(device, monkeypatch):
+    monkeypatch.setitem(sys.modules, "pynrfjprog", None)
+    with pytest.raises(SystemExit, match=r'pip install "nrfcredstore\[rtt\]"'):
+        run(["nrfcredstore", device, "list"])
+
 
 # pylint: disable=no-self-use
 class TestCli():

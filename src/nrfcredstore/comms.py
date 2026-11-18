@@ -16,12 +16,13 @@ import sys
 import time
 import atexit
 import inquirer
-from pynrfjprog import LowLevel
 import coloredlogs, logging
 import re
 import platform
 import os
 from typing import Tuple, List, Union, Optional
+
+from nrfcredstore.exceptions import RTTUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,21 @@ def get_connected_nordic_boards() -> List[Tuple[str, Union[str, int], ListPortIn
                 break
     return main_ports
 
+def _load_rtt_backend():
+    try:
+        from pynrfjprog import LowLevel
+    except ModuleNotFoundError as exc:
+        if exc.name != "pynrfjprog":
+            raise
+        raise RTTUnavailableError(
+            'RTT support requires pynrfjprog. Install it with: pip install "nrfcredstore[rtt]"'
+        ) from exc
+    return LowLevel
+
+
 # Returns a list of SEGGER J-Link serial numbers as int
 def get_connected_jlinks() -> List[int]:
+    LowLevel = _load_rtt_backend()
     with LowLevel.API(LowLevel.DeviceFamily.UNKNOWN) as api:
         return api.enum_emu_snr() or []
 
@@ -411,6 +425,7 @@ class Comms:
         self._rtt_line_buffer = ''
 
     def _init_rtt(self):
+        LowLevel = _load_rtt_backend()
         self.jlink_api = LowLevel.API(LowLevel.DeviceFamily.UNKNOWN)
         self.jlink_api.open()
         self.jlink_api.connect_to_emu_with_snr(self.serial_number)

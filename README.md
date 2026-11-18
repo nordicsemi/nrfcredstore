@@ -9,9 +9,15 @@ nrfcredstore is a command line tool that simplifies managing credentials stored 
 
 ## Install
 
-Run the following command to use this package as a dependency:
+Install the base package for serial-port use:
 
     pip3 install nrfcredstore
+
+To use RTT over SEGGER J-Link, install the `rtt` extra:
+
+    pip3 install "nrfcredstore[rtt]"
+
+The extra is required when the CLI device argument is `rtt` or a numeric SEGGER serial number.
 
 ## Requirements
 
@@ -143,6 +149,8 @@ For development mode, you need [poetry](https://python-poetry.org/):
 Install package dependencies, development dependencies, and the nrfcredstore itself into poetry's internal virtual environment:
 
     poetry install
+
+To include RTT support in the development environment, run `poetry install -E rtt`.
 
 ## Test
 

@@ -3,3 +3,6 @@ class NoATClientException(Exception):
 
 class ATCommandError(Exception):
     'Raised when an AT command responds with ERROR'
+
+class RTTUnavailableError(RuntimeError):
+    'Raised when RTT is requested without the optional dependency'

@@ -1,10 +1,12 @@
 import io
+import base64
 import pytest
 
 from unittest.mock import Mock, patch
 from nrfcredstore.credstore import *
 from nrfcredstore.exceptions import ATCommandError
 from nrfcredstore.command_interface import TLSCredShellInterface
+from nrfcredstore.csr import normalize_ecdsa_csr_der
 
 # pylint: disable=no-self-use
 class TestCredStore:

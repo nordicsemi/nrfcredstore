@@ -113,6 +113,32 @@ def test_get_csr_at(at_command_interface):
     assert csr == 'foo.bar'
     at_command_interface.comms.write_line.assert_called_once_with('AT%KEYGEN=42,2,0,"O=Test,CN=Device"')
 
+def test_get_csr_at_normalizes_legacy_ecdsa(at_command_interface):
+    legacy = (
+        b"\x30\x17"
+        b"\x30\x03\x02\x01\x00"
+        b"\x30\x0c\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02\x05\x00"
+        b"\x03\x02\x00\x00"
+    )
+    normalized = (
+        b"\x30\x15"
+        b"\x30\x03\x02\x01\x00"
+        b"\x30\x0a\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02"
+        b"\x03\x02\x00\x00"
+    )
+    import base64
+    body = base64.urlsafe_b64encode(legacy).decode().rstrip("=")
+    at_command_interface.comms.write_line = Mock()
+    at_command_interface.comms.expect_response.return_value = (
+        True,
+        f'%KEYGEN: "{body}.cose"',
+    )
+
+    csr = at_command_interface.get_csr(sectag=42)
+
+    expected = base64.urlsafe_b64encode(normalized).decode().rstrip("=")
+    assert csr == expected + ".cose"
+
 def test_get_csr_no_attributes(at_command_interface):
     """Test getting a CSR without attributes using ATCommandInterface"""
     at_command_interface.comms.write_line = Mock()

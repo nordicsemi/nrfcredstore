@@ -16,11 +16,12 @@ import re
 from typing import List, Tuple, Optional
 import sys
 import serial
+from nrfcredstore.csr import normalize_csr_output
 
 serial_busy_msg = (
     "Port is busy or disconnected. Please ensure no other program is using the serial port."
 )
-        
+
 timeout_msg = (
     "Unable to communicate with device. Please check that:\n"
     "- The correct serial port is selected\n"
@@ -120,7 +121,7 @@ class ATCommandInterface(CredentialCommandInterface):
             # Port is busy or disconnected (likely due to multiple access)
             logger.error(serial_busy_msg)
             sys.exit(13)  # ERR_SERIAL
-        
+
         # Timeout: no valid response received
         logger.error(timeout_msg)
         sys.exit(12)  # ERR_TIMEOUT
@@ -229,7 +230,7 @@ class ATCommandInterface(CredentialCommandInterface):
         # body is base64 encoded DER
         # cose is base64 encoded COSE header (CBOR)
 
-        return csr_blob
+        return normalize_csr_output(csr_blob)
 
 TLS_CRED_TYPES = ["CA", "SERV", "PK"]
 # This chunk size can be any multiple of 4, as long as it is small enough to fit within the

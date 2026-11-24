@@ -23,25 +23,25 @@ class CredType(Enum):
     NORDIC_PUB_KEY = 11
 
 class Credential:
-    def __init__(self, tag: int, type: int, sha: str):
+    def __init__(self, tag: int, type: int, sha: str) -> None:
         self.tag = tag
         self.type = CredType(type)
         self.sha = sha
 
 class CredStore:
-    def __init__(self, command_interface):
+    def __init__(self, command_interface) -> None:
         self.command_interface = command_interface
 
     def _is_tls_shell(self) -> bool:
         return isinstance(self.command_interface, TLSCredShellInterface)
 
     @staticmethod
-    def _check_tls_shell_type(type: CredType):
+    def _check_tls_shell_type(type: CredType) -> None:
         """The TLS credentials shell has a CA certificate, a device certificate and a private key."""
         if type not in (CredType.ROOT_CA_CERT, CredType.CLIENT_CERT, CredType.CLIENT_KEY):
             raise ValueError(f'{type.name} is not supported by the TLS credentials shell')
 
-    def func_mode(self, mode):
+    def func_mode(self, mode: int) -> bool:
         """Set modem functioning mode
 
         See AT Command Reference Guide for valid modes.
@@ -49,7 +49,7 @@ class CredStore:
 
         return self.command_interface.at_command(f'AT+CFUN={mode}', wait_for_result=True)
 
-    def list(self, tag = None, type: CredType = CredType.ANY) -> List[Credential]:
+    def list(self, tag: int | None = None, type: CredType = CredType.ANY) -> List[Credential]:
         """List stored credentials
 
         tag and type is optional, but specifying type requires tag.
@@ -86,7 +86,7 @@ class CredStore:
 
         return list(cred_map)
 
-    def write(self, tag: int, type: CredType, file: io.TextIOBase):
+    def write(self, tag: int, type: CredType, file: io.TextIOBase) -> None:
         """Write a credential file to the modem
 
         type can not be ANY.
@@ -104,7 +104,7 @@ class CredStore:
         if not self.command_interface.at_command(f'AT%CMNG=0,{tag},{type.value},"{cert}"', wait_for_result=True):
             raise RuntimeError("Failed to write credential")
 
-    def delete(self, tag: int, type: CredType):
+    def delete(self, tag: int, type: CredType) -> None:
         """Delete a credential from the modem
 
         type can not be ANY.
@@ -120,7 +120,7 @@ class CredStore:
         if not self.command_interface.at_command(f'AT%CMNG=3,{tag},{type.value}', wait_for_result=True):
             raise RuntimeError("Failed to delete credential")
 
-    def keygen(self, tag: int, file: io.BufferedIOBase, attributes: str = ''):
+    def keygen(self, tag: int, file: io.BufferedIOBase, attributes: str = '') -> None:
         """Generate a new private key and return a certificate signing request in DER format"""
 
         keygen_output = self.command_interface.get_csr(sectag=tag, attributes=attributes)

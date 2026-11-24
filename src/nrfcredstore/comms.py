@@ -21,6 +21,7 @@ import re
 import platform
 import os
 from typing import Tuple, List, Union, Optional
+from types import TracebackType
 
 from nrfcredstore.exceptions import RTTUnavailableError
 
@@ -215,7 +216,7 @@ def select_device_by_serial(serial_number : Union[str, int], list_all : bool) ->
     return (selected_port, serial_number)
 
 # Returns serial_port, serial_number of selected device
-def select_device(rtt : bool, serial_number : Optional[Union[str, int]], port : str, list_all : bool) -> Tuple[Optional[ListPortInfo], Optional[Union[str, int]]]:
+def select_device(rtt : bool, serial_number : Optional[Union[str, int]], port : Optional[str], list_all : bool) -> Tuple[Optional[ListPortInfo], Optional[Union[str, int]]]:
     if type(serial_number) == str and serial_number.isdigit():
         serial_number = int(serial_number)
 
@@ -298,17 +299,17 @@ def select_device(rtt : bool, serial_number : Optional[Union[str, int]], port : 
 class Comms:
     def __init__(
         self,
-        port=None,
-        serial=None,
-        baudrate=115200,
-        xonxoff=False,
-        rtscts=True,
-        dsrdtr=False,
-        timeout=1,
-        line_ending="\r\n",
-        rtt=False,
-        list_all=False,
-    ):
+        port: Optional[str] = None,
+        serial: Optional[Union[str, int]] = None,
+        baudrate: int = 115200,
+        xonxoff: bool = False,
+        rtscts: bool = True,
+        dsrdtr: bool = False,
+        timeout: float = 1,
+        line_ending: str = "\r\n",
+        rtt: bool = False,
+        list_all: bool = False,
+    ) -> None:
         self.timeout = timeout
         self.jlink_api = None
         self.serial_api = None
@@ -326,13 +327,13 @@ class Comms:
 
         atexit.register(self.close)
 
-    def __enter__(self):
+    def __enter__(self) -> "Comms":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> None:
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         if self.jlink_api:
             self.jlink_api.close()
             self.jlink_api = None
@@ -340,7 +341,7 @@ class Comms:
             self.serial_api.close()
             self.serial_api = None
 
-    def expect_response(self, ok_str=None, error_str=None, store_str=None, timeout=15, suppress_errors=False, error_pattern=None, ok_pattern=None):
+    def expect_response(self, ok_str: Optional[str] = None, error_str: Optional[str] = None, store_str: Optional[str] = None, timeout: float = 15, suppress_errors: bool = False, error_pattern: Optional[str] = None, ok_pattern: Optional[str] = None) -> Tuple[bool, str]:
         '''
         Read lines until either ok_str or error_str is found or timeout (seconds) is reached.
         If store_str is in one of the lines, it will be returned as the output.
@@ -378,14 +379,14 @@ class Comms:
             time.sleep(0.1)
         return (False, output)
 
-    def reset_device(self):
+    def reset_device(self) -> None:
         if self.jlink_api:
             self.close()
             self._init_rtt()
         else:
             logger.error("Cannot reset device, not using RTT")
 
-    def write_line(self, data : str):
+    def write_line(self, data : str) -> None:
         logger.debug(f"> {data}")
         self.write((data + self.line_ending).encode('ascii')) # type: ignore
 
@@ -413,20 +414,20 @@ class Comms:
             return line
         return None
 
-    def _write_rtt(self, data: bytes):
+    def _write_rtt(self, data: bytes) -> None:
         # Hacky workaround from old rtt_interface
         for i in range(0, len(data), 12):
             self.jlink_api.rtt_write(channel_index=0, msg=data[i : i + 12]) # type: ignore
             time.sleep(0.01)
 
-    def _write_serial(self, data: bytes):
+    def _write_serial(self, data: bytes) -> None:
         self.serial_api.write(data) # type: ignore
 
-    def _reset_input_buffer_rtt(self):
+    def _reset_input_buffer_rtt(self) -> None:
         # RTT does not have an input buffer to reset, but we can clear the line buffer
         self._rtt_line_buffer = ''
 
-    def _init_rtt(self):
+    def _init_rtt(self) -> None:
         LowLevel = _load_rtt_backend()
         self.jlink_api = LowLevel.API(LowLevel.DeviceFamily.UNKNOWN)
         self.jlink_api.open()

@@ -2,6 +2,7 @@ import argparse
 import sys
 import serial
 import logging
+from typing import NoReturn, Optional, Sequence
 
 from nrfcredstore.exceptions import ATCommandError, NoATClientException, RTTUnavailableError
 from nrfcredstore.command_interface import ATCommandInterface, TLSCredKeygenShellInterface
@@ -19,7 +20,7 @@ ERR_AT_COMMAND = 11
 ERR_TIMEOUT = 12
 ERR_SERIAL = 13
 
-def parse_args(in_args):
+def parse_args(in_args: Optional[Sequence[str]]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Manage certificates stored in a cellular modem.')
     parser.add_argument('dev', help='Device used to communicate with the modem. For interactive selection of serial port, use "auto". For RTT, use "rtt". If given a SEGGER serial number, it is assumed to be an RTT device.')
     parser.add_argument('--baudrate', type=int, default=115200, help='Serial baudrate')
@@ -86,7 +87,7 @@ def parse_args(in_args):
 
     return parser.parse_args(in_args)
 
-def exec_cmd(args, credstore):
+def exec_cmd(args: argparse.Namespace, credstore: CredStore) -> None:
     tls_shell = args.cmd_type == 'tls-shell'
 
     if tls_shell and args.subcommand not in (None, 'write', 'delete', 'generate'):
@@ -141,11 +142,11 @@ def exec_cmd(args, credstore):
             raise RuntimeError("Failed to get attestation token.")
         print(f'Attestation token: {attoken}')
 
-def exit_with_msg(exitcode, msg):
+def exit_with_msg(exitcode, msg: object) -> NoReturn:
     print(msg)
     exit(exitcode)
 
-def main(args, credstore):
+def main(args: argparse.Namespace, credstore: CredStore) -> None:
     if args.cmd_type == 'auto':
         credstore.command_interface.detect_shell_mode()
     elif args.cmd_type == 'shell':
@@ -154,7 +155,7 @@ def main(args, credstore):
         credstore.command_interface.enable_error_codes()
     exec_cmd(args, credstore)
 
-def run(argv=sys.argv):
+def run(argv: Sequence[str] = sys.argv) -> None:
     args = parse_args(argv[1:])
     comms = None
 

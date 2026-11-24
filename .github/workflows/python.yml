@@ -38,6 +38,13 @@ jobs:
       - name: Test with pytest
         run: |
           poetry run pytest --cov=. --cov-report xml --cov-report html tests
+      - name: Type-check public API
+        run: |
+          poetry run basedpyright
+      - name: Check packaged typing marker
+        run: |
+          poetry build
+          poetry run python -c "import glob, tarfile, zipfile; w = glob.glob('dist/*.whl')[0]; s = glob.glob('dist/*.tar.gz')[0]; assert 'nrfcredstore/py.typed' in zipfile.ZipFile(w).namelist(); assert any(n.endswith('/src/nrfcredstore/py.typed') for n in tarfile.open(s).getnames())"
       - uses: actions/upload-artifact@v4
         with:
           name: coverage-report-${{ matrix.python-version }}

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 IMEI_LEN = 15
 
 class CredentialCommandInterface(ABC):
-    def __init__(self, comms: Comms):
+    def __init__(self, comms: Comms) -> None:
         """Initialize a Credentials Command Interface
 
         Args:
@@ -43,7 +43,7 @@ class CredentialCommandInterface(ABC):
         """
         self.comms = comms
 
-    def write_raw(self, command: str):
+    def write_raw(self, command: str) -> None:
         """Write a raw line directly to the serial interface."""
         self.comms.write_line(command)
 
@@ -58,7 +58,7 @@ class CredentialCommandInterface(ABC):
         return False
 
     @abstractmethod
-    def check_credential_exists(self, sectag: int, cred_type: int, get_hash=True) -> tuple[bool, Optional[str]]:
+    def check_credential_exists(self, sectag: int, cred_type: int, get_hash: bool = True) -> tuple[bool, Optional[str]]:
         """Verify that a credential is installed. If check_hash is true, retrieve the SHA hash."""
         return False, None
 
@@ -94,7 +94,7 @@ class CredentialCommandInterface(ABC):
 class ATCommandInterface(CredentialCommandInterface):
     shell = False
 
-    def _parse_sha(self, cmng_result_str: str):
+    def _parse_sha(self, cmng_result_str: str) -> Optional[str]:
         # Example AT%CMNG response:
         #   %CMNG: 123,0,"2C43952EE9E000FF2ACC4E2ED0897C0A72AD5FA72C3D934E81741CBD54F05BD1"
         # The first item in " is the SHA.
@@ -104,10 +104,10 @@ class ATCommandInterface(CredentialCommandInterface):
             logger.error(f'Could not parse credential hash: {cmng_result_str}')
             return None
 
-    def set_shell_mode(self, shell: bool):
+    def set_shell_mode(self, shell: bool) -> None:
         self.shell = shell
 
-    def detect_shell_mode(self):
+    def detect_shell_mode(self) -> None:
         """Detect if the device is in shell mode or not. """
         try:
             for cmd, shell_mode in [("at AT+CGSN", True), ("AT+CGSN", False)]:
@@ -126,12 +126,12 @@ class ATCommandInterface(CredentialCommandInterface):
         logger.error(timeout_msg)
         sys.exit(12)  # ERR_TIMEOUT
 
-    def enable_error_codes(self):
+    def enable_error_codes(self) -> None:
         """Enable error codes in the AT client"""
         if not self.at_command('AT+CMEE=1', wait_for_result=True):
             logger.error("Failed to enable error codes.")
 
-    def at_command(self, at_command: str, wait_for_result=False, suppress_errors=False):
+    def at_command(self, at_command: str, wait_for_result: bool = False, suppress_errors: bool = False) -> bool:
         """Write an AT command to the command interface. Optionally wait for OK"""
 
         self.comms.reset_input_buffer()
@@ -150,13 +150,13 @@ class ATCommandInterface(CredentialCommandInterface):
         else:
             return True
 
-    def write_credential(self, sectag: int, cred_type: int, cred_text: str):
+    def write_credential(self, sectag: int, cred_type: int, cred_text: str) -> bool:
         return self.at_command(f'AT%CMNG=0,{sectag},{cred_type},"{cred_text}"', wait_for_result=True)
 
-    def delete_credential(self, sectag: int, cred_type: int):
+    def delete_credential(self, sectag: int, cred_type: int) -> bool:
         return self.at_command(f'AT%CMNG=3,{sectag},{cred_type}', wait_for_result=True)
 
-    def check_credential_exists(self, sectag: int, cred_type: int, get_hash=True):
+    def check_credential_exists(self, sectag: int, cred_type: int, get_hash: bool = True) -> tuple[bool, Optional[str]]:
         self.at_command(f'AT%CMNG=1,{sectag},{cred_type}')
         retval, output = self.comms.expect_response("OK", "ERROR", "%CMNG: ")
         # get the last line of the response
@@ -169,14 +169,14 @@ class ATCommandInterface(CredentialCommandInterface):
 
         return False, None
 
-    def calculate_expected_hash(self, cred_text: str):
+    def calculate_expected_hash(self, cred_text: str) -> str:
         # AT Command host returns hex of SHA256 hash of credential plaintext
         return hashlib.sha256(cred_text.encode('utf-8')).hexdigest().upper()
 
-    def go_offline(self):
+    def go_offline(self) -> bool:
         return self.at_command('AT+CFUN=4', wait_for_result=True)
 
-    def get_imei(self):
+    def get_imei(self) -> Optional[str]:
         self.at_command('AT+CGSN')
         retval, output = self.comms.expect_response("OK", "ERROR", "")
         # get the last line of the response
@@ -185,7 +185,7 @@ class ATCommandInterface(CredentialCommandInterface):
             return None
         return output[:IMEI_LEN]
 
-    def get_model_id(self):
+    def get_model_id(self) -> Optional[str]:
         self.at_command('AT+CGMM')
         retval, output = self.comms.expect_response("OK", "ERROR", "")
         # get the last line of the response
@@ -194,7 +194,7 @@ class ATCommandInterface(CredentialCommandInterface):
             return None
         return output
 
-    def get_mfw_version(self):
+    def get_mfw_version(self) -> Optional[str]:
         self.at_command('AT+CGMR')
         retval, output = self.comms.expect_response("OK", "ERROR", "")
         # get the last line of the response
@@ -203,7 +203,7 @@ class ATCommandInterface(CredentialCommandInterface):
             return None
         return output
 
-    def get_attestation_token(self):
+    def get_attestation_token(self) -> Optional[str]:
         self.at_command('AT%ATTESTTOKEN')
         retval, output = self.comms.expect_response("OK", "ERROR", "%ATTESTTOKEN:")
         if not retval:
@@ -211,7 +211,7 @@ class ATCommandInterface(CredentialCommandInterface):
         attest_tok = output.split('"')[1]
         return attest_tok
 
-    def get_csr(self, sectag=0, attributes=""):
+    def get_csr(self, sectag: int = 0, attributes: str = "") -> Optional[str]:
         if attributes:
             self.at_command(f'AT%KEYGEN={sectag},2,0,"{attributes}"')
         else:
@@ -238,7 +238,7 @@ TLS_CRED_TYPES = ["CA", "SERV", "PK"]
 TLS_CRED_CHUNK_SIZE = 48
 
 class TLSCredShellInterface(CredentialCommandInterface):
-    def write_credential(self, sectag, cred_type, cred_text):
+    def write_credential(self, sectag: int, cred_type: int, cred_text: str) -> bool:
         # Because the Zephyr shell does not support multi-line commands,
         # we must base-64 encode our PEM strings and install them as if they were binary.
         # Yes, this does mean we are base-64 encoding a string which is already mostly base-64.
@@ -272,12 +272,12 @@ class TLSCredShellInterface(CredentialCommandInterface):
         result, _ = self.comms.expect_response(ok_pattern="Added TLS credential")
         return result
 
-    def delete_credential(self, sectag: int, cred_type: int):
+    def delete_credential(self, sectag: int, cred_type: int) -> bool:
         self.write_raw(f'cred del {sectag} {TLS_CRED_TYPES[cred_type]}')
         result, _ = self.comms.expect_response(ok_pattern="Deleted TLS credential", error_pattern="There is no TLS credential")
         return result
 
-    def check_credential_exists(self, sectag: int, cred_type: int, get_hash=True):
+    def check_credential_exists(self, sectag: int, cred_type: int, get_hash: bool = True) -> tuple[bool, Optional[str]]:
         self.write_raw(f'cred list {sectag} {TLS_CRED_TYPES[cred_type]}')
 
         # This will capture the list dump for the credential if it exists.
@@ -303,23 +303,23 @@ class TLSCredShellInterface(CredentialCommandInterface):
 
         return True, hash
 
-    def calculate_expected_hash(self, cred_text: str):
+    def calculate_expected_hash(self, cred_text: str) -> str:
         # TLS Credentials shell returns base-64 of SHA256 hash of full credential, including NULL
         # termination.
         hash = hashlib.sha256(cred_text.encode('utf-8') + b'\x00')
         return base64.b64encode(hash.digest()).decode()
 
-    def get_csr(self, sectag=0, attributes=""):
+    def get_csr(self, sectag: int = 0, attributes: str = "") -> Optional[str]:
         raise RuntimeError("The TLS Credentials Shell does not support CSR generation")
 
-    def go_offline(self):
+    def go_offline(self) -> bool:
         # TLS credentials shell has no concept of online/offline. Just no-op.
         return True
 
-    def get_imei(self):
+    def get_imei(self) -> Optional[str]:
         raise RuntimeError("The TLS Credentials Shell does not support IMEI extraction")
 
-    def get_mfw_version(self):
+    def get_mfw_version(self) -> Optional[str]:
         raise RuntimeError("The TLS Credentials Shell does not support MFW version extraction")
 
 # Index into TLS_CRED_TYPES for the private key. For the key generation interfaces the private
@@ -345,7 +345,7 @@ class TLSCredKeygenShellInterface(TLSCredShellInterface):
     KEYGEN_CMD = "cred keygen {sectag}"
     CSR_CMD = 'cred csr {sectag} "{attributes}"'
     # Used when no attributes are given. None means the attributes are required.
-    CSR_CMD_DEFAULT_SUBJECT = None
+    CSR_CMD_DEFAULT_SUBJECT: Optional[str] = None
     DELETE_CMD = "cred keydel {sectag}"
     PUBKEY_CMD = "cred pubkey {sectag}"
 
@@ -363,7 +363,7 @@ class TLSCredKeygenShellInterface(TLSCredShellInterface):
         )
         return True
 
-    def delete_credential(self, sectag: int, cred_type: int):
+    def delete_credential(self, sectag: int, cred_type: int) -> bool:
         # An uploaded private key is a normal TLS credential. A generated key is a
         # PSA key, so it is deleted through the key command if no uploaded key exists.
         if cred_type == KEYGEN_PK_TYPE:
@@ -377,7 +377,7 @@ class TLSCredKeygenShellInterface(TLSCredShellInterface):
             return result
         return super().delete_credential(sectag, cred_type)
 
-    def get_csr(self, sectag=0, attributes=""):
+    def get_csr(self, sectag: int = 0, attributes: str = "") -> Optional[str]:
         if attributes:
             csr_cmd = self.CSR_CMD.format(sectag=sectag, attributes=attributes)
         elif self.CSR_CMD_DEFAULT_SUBJECT is not None:
@@ -434,10 +434,10 @@ class TLSCredKeygenShellInterface(TLSCredShellInterface):
         logger.error("Public key not found in device output")
         return None
 
-    def get_imei(self):
+    def get_imei(self) -> Optional[str]:
         raise RuntimeError("The key generation shell does not support IMEI extraction")
 
-    def get_mfw_version(self):
+    def get_mfw_version(self) -> Optional[str]:
         raise RuntimeError("The key generation shell does not support MFW version extraction")
 
 class NrfCloudCredShellInterface(TLSCredKeygenShellInterface):

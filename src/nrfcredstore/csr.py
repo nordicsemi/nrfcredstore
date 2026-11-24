@@ -4,7 +4,7 @@ import base64
 ECDSA_SHA256_OID_TLV = b"\x06\x08\x2A\x86\x48\xCE\x3D\x04\x03\x02"
 
 
-def _decode_tlv_length(data, offset):
+def _decode_tlv_length(data: bytes, offset: int) -> tuple[int, int]:
     if offset >= len(data):
         raise ValueError("Missing DER length")
 
@@ -24,7 +24,7 @@ def _decode_tlv_length(data, offset):
     return value, 1 + length_bytes
 
 
-def _encode_tlv_length(value):
+def _encode_tlv_length(value: int) -> bytes:
     if value < 0x80:
         return bytes([value])
 
@@ -32,7 +32,7 @@ def _encode_tlv_length(value):
     return bytes([0x80 | len(encoded)]) + encoded
 
 
-def normalize_ecdsa_csr_der(der):
+def normalize_ecdsa_csr_der(der: bytes) -> bytes:
     """Remove the invalid NULL parameter from legacy nRF91 ECDSA-SHA256 CSRs."""
     if len(der) < 8 or der[0] != 0x30:
         return der
@@ -97,7 +97,7 @@ def normalize_ecdsa_csr_der(der):
         return der
 
 
-def _decode_base64(body):
+def _decode_base64(body: str) -> bytes | None:
     padding = "=" * (-len(body) % 4)
     try:
         if "-" in body or "_" in body:
@@ -107,7 +107,7 @@ def _decode_base64(body):
         return None
 
 
-def _encode_base64(body, der):
+def _encode_base64(body: str, der: bytes) -> str:
     was_urlsafe = "-" in body or "_" in body
     had_padding = body.endswith("=")
 
